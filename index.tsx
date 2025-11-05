@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo, memo, StrictMode } from 'react';
 import ReactDOM from 'react-dom/client';
 
@@ -49,19 +50,54 @@ import ReactDOM from 'react-dom/client';
       const ITEM_PROBABILITY = 0.10; // 10%
       const PET_PROBABILITY = 0.05; // 5%
 
+      // --- Type Definitions ---
+      type EntityType = 'empty' | 'mole' | 'bomb' | 'clock' | 'pet';
+      type PetSubType = keyof typeof PET_CONFIG;
+      type Difficulty = keyof typeof DIFFICULTY_MODIFIERS;
+      type Job = keyof typeof JOB_CONFIG;
+      type GameState = 'idle' | 'playing' | 'paused' | 'levelComplete' | 'gameOver' | 'gameComplete';
+      type ShopPowerupId = 'mole_bait' | 'bomb_defusal_kit';
+
+      type Entity = {
+          type: EntityType;
+          subType?: PetSubType;
+      };
+
+      type VisibilityProps = {
+          isVisible: boolean;
+      };
+
+      type HoleProps = {
+          entity: Entity;
+          onWhack: () => void;
+          canWhack: boolean;
+          isHinted: boolean;
+      };
+
+      type Buff = {
+          expiresAt: number;
+          [key: string]: any;
+      };
+
       // --- SVG Icons ---
       const HammerIcon = () => ( <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 inline-block mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg> );
       const TimerIcon = () => ( <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 inline-block mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> );
       const GoldIcon = () => ( <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline-block mr-1 text-yellow-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.414-1.414L11 10.586V6z" clipRule="evenodd" /></svg>);
       
-      const BombIcon = ({ isVisible }) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-gray-800 rounded-full border-4 border-black flex justify-center items-start"><div className="w-2 h-4 bg-gray-500 rounded-t-sm"></div></div></div> );
-      const ClockIcon = ({ isVisible }) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-blue-400 rounded-full border-4 border-blue-800 flex justify-center items-center"><svg xmlns="http://www.w3.org/2000/svg" className="h-2/3 w-2/3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div></div> );
-      const GoldenMole = memo(({ isVisible }) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-yellow-400 rounded-full border-4 border-yellow-600 animate-pulse"><div className="absolute top-1/4 left-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/4 right-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1/4 h-1/5 bg-pink-300 rounded-t-full rounded-b-sm"></div><div className="absolute -top-2 left-1/2 -translate-x-1/2 text-2xl">🌟</div></div></div> ));
-      const FairyMole = memo(({ isVisible }) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-pink-300 rounded-full border-4 border-pink-500"><div className="absolute top-1/4 left-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/4 right-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1/4 h-1/5 bg-white rounded-t-full rounded-b-sm"></div><div className="absolute top-0 left-0 -translate-x-1/4 -translate-y-1/4 text-xl rotate-[-30deg]">🧚</div></div></div> ));
+      // FIX: Add VisibilityProps to BombIcon component to type its props.
+      const BombIcon = ({ isVisible }: VisibilityProps) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-gray-800 rounded-full border-4 border-black flex justify-center items-start"><div className="w-2 h-4 bg-gray-500 rounded-t-sm"></div></div></div> );
+      // FIX: Add VisibilityProps to ClockIcon component to type its props.
+      const ClockIcon = ({ isVisible }: VisibilityProps) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-blue-400 rounded-full border-4 border-blue-800 flex justify-center items-center"><svg xmlns="http://www.w3.org/2000/svg" className="h-2/3 w-2/3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div></div> );
+      // FIX: Add VisibilityProps to GoldenMole component to type its props.
+      const GoldenMole = memo(({ isVisible }: VisibilityProps) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-yellow-400 rounded-full border-4 border-yellow-600 animate-pulse"><div className="absolute top-1/4 left-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/4 right-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1/4 h-1/5 bg-pink-300 rounded-t-full rounded-b-sm"></div><div className="absolute -top-2 left-1/2 -translate-x-1/2 text-2xl">🌟</div></div></div> ));
+      // FIX: Add VisibilityProps to FairyMole component to type its props.
+      const FairyMole = memo(({ isVisible }: VisibilityProps) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-pink-300 rounded-full border-4 border-pink-500"><div className="absolute top-1/4 left-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/4 right-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1/4 h-1/5 bg-white rounded-t-full rounded-b-sm"></div><div className="absolute top-0 left-0 -translate-x-1/4 -translate-y-1/4 text-xl rotate-[-30deg]">🧚</div></div></div> ));
 
       // --- Child Components ---
-      const Mole = memo(({ isVisible }) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-amber-700 rounded-full border-4 border-black/80"><div className="absolute top-1/4 left-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/4 right-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1/4 h-1/5 bg-pink-300 rounded-t-full rounded-b-sm"></div></div></div> ));
-      const Hole = memo(({ entity, onWhack, canWhack, isHinted }) => {
+      // FIX: Add VisibilityProps to Mole component to type its props.
+      const Mole = memo(({ isVisible }: VisibilityProps) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-amber-700 rounded-full border-4 border-black/80"><div className="absolute top-1/4 left-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/4 right-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1/4 h-1/5 bg-pink-300 rounded-t-full rounded-b-sm"></div></div></div> ));
+      // FIX: Add HoleProps to Hole component to type its props.
+      const Hole = memo(({ entity, onWhack, canWhack, isHinted }: HoleProps) => {
           const isVisible = entity.type !== 'empty';
           const renderEntity = () => {
               switch (entity.type) {
@@ -182,20 +218,20 @@ import ReactDOM from 'react-dom/client';
 
       // --- Main App Component ---
       function App() {
-        const [gameState, setGameState] = useState('idle'); // idle, playing, paused, levelComplete, gameOver, gameComplete
+        const [gameState, setGameState] = useState<GameState>('idle'); // idle, playing, paused, levelComplete, gameOver, gameComplete
         const [score, setScore] = useState(0);
         const [level, setLevel] = useState(1);
-        const [difficulty, setDifficulty] = useState('보통');
+        const [difficulty, setDifficulty] = useState<Difficulty>('보통');
         const [gridSize, setGridSize] = useState(9);
-        const [entities, setEntities] = useState(new Array(gridSize).fill({type: 'empty'}));
-        const [job, setJob] = useState('농부');
+        const [entities, setEntities] = useState<Entity[]>(new Array(gridSize).fill({type: 'empty'}));
+        const [job, setJob] = useState<Job>('농부');
         const [isShopOpen, setIsShopOpen] = useState(false);
         
         // Persistent player data
         const [highScore, setHighScore] = useState(() => Number(localStorage.getItem('whac-a-mole-highscore') || 0));
         const [gold, setGold] = useState(() => Number(localStorage.getItem('whac-a-mole-gold') || 0));
-        const [powerups, setPowerups] = useState(() => JSON.parse(localStorage.getItem('whac-a-mole-powerups') || '{}'));
-        const [unlockedJobs, setUnlockedJobs] = useState(() => JSON.parse(localStorage.getItem('whac-a-mole-unlockedJobs') || '["농부", "광부", "시간 여행자"]'));
+        const [powerups, setPowerups] = useState<Record<ShopPowerupId, number>>(() => JSON.parse(localStorage.getItem('whac-a-mole-powerups') || '{}'));
+        const [unlockedJobs, setUnlockedJobs] = useState<Job[]>(() => JSON.parse(localStorage.getItem('whac-a-mole-unlockedJobs') || '["농부", "광부", "시간 여행자"]'));
         
         useEffect(() => { localStorage.setItem('whac-a-mole-gold', gold.toString()); }, [gold]);
         useEffect(() => { localStorage.setItem('whac-a-mole-powerups', JSON.stringify(powerups)); }, [powerups]);
@@ -207,9 +243,11 @@ import ReactDOM from 'react-dom/client';
         const [skillCooldown, setSkillCooldown] = useState(0);
         const [scorePulse, setScorePulse] = useState(false);
         const [isMoleBaitActive, setIsMoleBaitActive] = useState(false);
-        const [nextMoleHint, setNextMoleHint] = useState(null);
-        const [activeBuffs, setActiveBuffs] = useState({});
-        const [buffTimers, setBuffTimers] = useState({});
+        const [nextMoleHint, setNextMoleHint] = useState<number | null>(null);
+        // FIX: Add type for activeBuffs state to allow accessing properties like 'moleBoost'.
+        const [activeBuffs, setActiveBuffs] = useState<Record<string, Buff>>({});
+        // FIX: Add type for buffTimers state to allow accessing properties like 'scoreDoubled'.
+        const [buffTimers, setBuffTimers] = useState<Record<string, number>>({});
 
         const gridDimension = useMemo(() => Math.sqrt(gridSize), [gridSize]);
         const timeDilation = isSkillActive ? 1.5 : 1.0;
@@ -239,7 +277,7 @@ import ReactDOM from 'react-dom/client';
           const timer = setInterval(() => {
             const now = Date.now();
             let hasChanged = false;
-            const newBuffTimers = {};
+            const newBuffTimers: Record<string, number> = {};
             for (const key in activeBuffs) {
               const timeLeft = Math.ceil((activeBuffs[key].expiresAt - now) / 1000);
               if (timeLeft > 0) {
@@ -251,7 +289,7 @@ import ReactDOM from 'react-dom/client';
             setBuffTimers(newBuffTimers);
             if(hasChanged) {
               setActiveBuffs(prev => {
-                const newActive = {};
+                const newActive: Record<string, Buff> = {};
                 for(const key in prev) {
                   if (prev[key].expiresAt > now) newActive[key] = prev[key];
                 }
@@ -306,7 +344,7 @@ import ReactDOM from 'react-dom/client';
           if (gameState !== 'playing') return;
           const moleIntervalId = setInterval(() => {
             setEntities(() => {
-                const newEntities = new Array(gridSize).fill({ type: 'empty' });
+                const newEntities: Entity[] = new Array(gridSize).fill({ type: 'empty' });
                 const numToShow = Math.min(Math.floor(level / 2) + Math.floor(gridSize / 9), Math.floor(gridSize / 2));
                 let availableSpots = Array.from(Array(gridSize).keys());
                 
@@ -320,7 +358,7 @@ import ReactDOM from 'react-dom/client';
                     } else {
                       const rand = Math.random();
                       if (rand < PET_PROBABILITY) {
-                        const petTypes = Object.keys(PET_CONFIG);
+                        const petTypes = Object.keys(PET_CONFIG) as PetSubType[];
                         const chosenPet = petTypes[Math.floor(Math.random() * petTypes.length)];
                         newEntities[spotIndex] = { type: 'pet', subType: chosenPet };
                       }
@@ -347,14 +385,14 @@ import ReactDOM from 'react-dom/client';
           return () => clearInterval(moleIntervalId);
         }, [gameState, gridSize, level, job, unlockedJobs, isMoleBaitActive, effectiveInterval]);
         
-        const addBuff = (buffType, durationSeconds, data = {}) => {
+        const addBuff = (buffType: string, durationSeconds: number, data = {}) => {
             setActiveBuffs(prev => ({
                 ...prev,
                 [buffType]: { expiresAt: Date.now() + durationSeconds * 1000, ...data }
             }));
         };
 
-        const setupLevel = useCallback((targetLevel, initialScore = 0) => {
+        const setupLevel = useCallback((targetLevel: number, initialScore = 0) => {
           setLevel(targetLevel);
           setScore(initialScore);
           setMolesWhacked(0);
@@ -388,7 +426,7 @@ import ReactDOM from 'react-dom/client';
         const togglePause = useCallback(() => setGameState(prev => (prev === 'playing' ? 'paused' : 'playing')), []);
         const triggerScorePulse = () => { setScorePulse(true); setTimeout(() => setScorePulse(false), 200); };
 
-        const whackHole = useCallback((index) => {
+        const whackHole = useCallback((index: number) => {
           const entity = entities[index];
           if (entity.type !== 'empty') {
             let scoreChange = 0;
@@ -436,9 +474,9 @@ import ReactDOM from 'react-dom/client';
         }, [entities, job, molesWhacked, unlockedJobs, powerups, activeBuffs]);
 
         const handleSkillUse = () => { if (job === '시간 여행자' && skillCooldown === 0 && gameState === 'playing') { setIsSkillActive(true); setSkillCooldown(20); setTimeout(() => setIsSkillActive(false), 5000); }};
-        const handleGridSizeChange = (newSize) => { if (gameState === 'idle') setGridSize(newSize); };
-        const handleDifficultyChange = (newDifficulty) => { if (gameState === 'idle') setDifficulty(newDifficulty); };
-        const handleJobChange = (newJob) => { if (gameState === 'idle') setJob(newJob); };
+        const handleGridSizeChange = (newSize: number) => { if (gameState === 'idle') setGridSize(newSize); };
+        const handleDifficultyChange = (newDifficulty: Difficulty) => { if (gameState === 'idle') setDifficulty(newDifficulty); };
+        const handleJobChange = (newJob: Job) => { if (gameState === 'idle') setJob(newJob); };
         
         const useMoleBait = () => {
             if ((powerups.mole_bait || 0) > 0 && !isMoleBaitActive && gameState === 'playing') {
@@ -536,7 +574,7 @@ import ReactDOM from 'react-dom/client';
                     <div>
                         <h3 className="font-bold text-lg mb-2">난이도 선택</h3>
                         <div className="inline-flex rounded-md shadow-sm" role="group">
-                            {Object.keys(DIFFICULTY_MODIFIERS).map(d => ( <button key={d} onClick={() => handleDifficultyChange(d)} type="button" className={`px-4 py-2 text-sm font-medium border first:rounded-l-lg last:rounded-r-lg ${difficulty === d ? 'bg-orange-500 text-white border-orange-600' : 'bg-white text-amber-900 border-gray-200 hover:bg-gray-100'}`}>{d}</button>))}
+                            {Object.keys(DIFFICULTY_MODIFIERS).map(d => ( <button key={d} onClick={() => handleDifficultyChange(d as Difficulty)} type="button" className={`px-4 py-2 text-sm font-medium border first:rounded-l-lg last:rounded-r-lg ${difficulty === d ? 'bg-orange-500 text-white border-orange-600' : 'bg-white text-amber-900 border-gray-200 hover:bg-gray-100'}`}>{d}</button>))}
                         </div>
                     </div>
                     <div>
