@@ -1,0 +1,589 @@
+import React, { useState, useEffect, useCallback, useMemo, memo, StrictMode } from 'react';
+import ReactDOM from 'react-dom/client';
+
+      // --- Game Configuration ---
+      const LEVEL_CONFIG = {
+          1: { scoreToPass: 10, interval: 1000, duration: 30 },
+          2: { scoreToPass: 15, interval: 850, duration: 30 },
+          3: { scoreToPass: 20, interval: 700, duration: 25 },
+          4: { scoreToPass: 25, interval: 550, duration: 25 },
+          5: { scoreToPass: 30, interval: 400, duration: 20 },
+      };
+      const MAX_LEVEL = Object.keys(LEVEL_CONFIG).length;
+
+      const DIFFICULTY_MODIFIERS = {
+        '쉬움': { interval: 1.2, duration: 1.2, score: 0.8 },
+        '보통': { interval: 1.0, duration: 1.0, score: 1.0 },
+        '어려움': { interval: 0.8, duration: 0.8, score: 1.2 },
+      };
+
+      const JOB_CONFIG = {
+          '농부': { name: '농부', description: '두더지 10마리마다 +2 보너스 점수', icon: '👨‍🌾' },
+          '광부': { name: '광부', description: '폭탄 패널티 감소 (-1점)', icon: '⛏️' },
+          '시간 여행자': { name: '시간 여행자', description: '5초간 게임 속도 50% 감소 (쿨타임 20초)', icon: '⏳' },
+          '엔지니어': { name: '엔지니어', description: '시계가 +3초를 부여하고, 레벨 시작 시 +5초를 얻습니다.', icon: '⚙️' },
+          '점성술사': { name: '점성술사', description: '가끔씩 다음 두더지 위치를 미리 알려줍니다.', icon: '✨' },
+          '도박사': { name: '도박사', description: '타격 시 10% 확률로 점수 2배, 5% 확률로 0점', icon: '🎲' },
+          '수집가': { name: '수집가', description: '게임 종료 시 획득 골드 20% 증가', icon: '💰' },
+      };
+      
+      const PET_CONFIG = {
+        'golden_mole': { name: '황금 두더지', icon: '🌟', description: '즉시 10골드 획득 및 5초간 점수 2배' },
+        'fairy_mole': { name: '요정 두더지', icon: '🧚', description: '즉시 5초 추가 및 10초간 두더지 등장 빈도 증가' },
+      };
+
+      const SHOP_ITEMS = {
+        powerups: [
+          { id: 'mole_bait', name: '두더지 미끼', description: '5초간 두더지만 나타나게 합니다.', price: 50, icon: '🍖' },
+          { id: 'bomb_defusal_kit', name: '폭탄 해체 키트', description: '다음 폭탄 1개를 무효화합니다.', price: 75, icon: '🔧' }
+        ],
+        jobs: [
+          { id: '엔지니어', name: '엔지니어', description: JOB_CONFIG['엔지니어'].description, price: 500, icon: '⚙️' },
+          { id: '점성술사', name: '점성술사', description: JOB_CONFIG['점성술사'].description, price: 750, icon: '✨' },
+          { id: '도박사', name: '도박사', description: JOB_CONFIG['도박사'].description, price: 600, icon: '🎲' },
+          { id: '수집가', name: '수집가', description: JOB_CONFIG['수집가'].description, price: 600, icon: '💰' }
+        ]
+      };
+
+      const BOMB_PROBABILITY = 0.08; // 8%
+      const ITEM_PROBABILITY = 0.10; // 10%
+      const PET_PROBABILITY = 0.05; // 5%
+
+      // --- SVG Icons ---
+      const HammerIcon = () => ( <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 inline-block mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg> );
+      const TimerIcon = () => ( <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 inline-block mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> );
+      const GoldIcon = () => ( <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline-block mr-1 text-yellow-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.414-1.414L11 10.586V6z" clipRule="evenodd" /></svg>);
+      
+      const BombIcon = ({ isVisible }) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-gray-800 rounded-full border-4 border-black flex justify-center items-start"><div className="w-2 h-4 bg-gray-500 rounded-t-sm"></div></div></div> );
+      const ClockIcon = ({ isVisible }) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-blue-400 rounded-full border-4 border-blue-800 flex justify-center items-center"><svg xmlns="http://www.w3.org/2000/svg" className="h-2/3 w-2/3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div></div> );
+      const GoldenMole = memo(({ isVisible }) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-yellow-400 rounded-full border-4 border-yellow-600 animate-pulse"><div className="absolute top-1/4 left-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/4 right-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1/4 h-1/5 bg-pink-300 rounded-t-full rounded-b-sm"></div><div className="absolute -top-2 left-1/2 -translate-x-1/2 text-2xl">🌟</div></div></div> ));
+      const FairyMole = memo(({ isVisible }) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-pink-300 rounded-full border-4 border-pink-500"><div className="absolute top-1/4 left-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/4 right-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1/4 h-1/5 bg-white rounded-t-full rounded-b-sm"></div><div className="absolute top-0 left-0 -translate-x-1/4 -translate-y-1/4 text-xl rotate-[-30deg]">🧚</div></div></div> ));
+
+      // --- Child Components ---
+      const Mole = memo(({ isVisible }) => ( <div className={`relative w-2/3 h-2/3 transition-transform duration-100 ease-out transform ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}><div className="absolute inset-0 bg-amber-700 rounded-full border-4 border-black/80"><div className="absolute top-1/4 left-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/4 right-[20%] w-1/6 h-1/4 bg-black rounded-full"></div><div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1/4 h-1/5 bg-pink-300 rounded-t-full rounded-b-sm"></div></div></div> ));
+      const Hole = memo(({ entity, onWhack, canWhack, isHinted }) => {
+          const isVisible = entity.type !== 'empty';
+          const renderEntity = () => {
+              switch (entity.type) {
+                  case 'mole': return <Mole isVisible={isVisible} />;
+                  case 'bomb': return <BombIcon isVisible={isVisible} />;
+                  case 'clock': return <ClockIcon isVisible={isVisible} />;
+                  case 'pet':
+                      switch(entity.subType) {
+                          case 'golden_mole': return <GoldenMole isVisible={isVisible} />;
+                          case 'fairy_mole': return <FairyMole isVisible={isVisible} />;
+                          default: return null;
+                      }
+                  default: return null;
+              }
+          };
+          return ( <div className={`w-full h-full bg-yellow-900/60 rounded-full overflow-hidden flex items-end justify-center pt-4 shadow-inner relative transition-shadow ${isHinted ? 'ring-4 ring-purple-400 ring-opacity-75 animate-pulse' : ''}`} onClick={canWhack && isVisible ? onWhack : undefined}>{renderEntity()}</div> );
+      });
+
+      const ShopModal = ({ isOpen, onClose, gold, powerups, unlockedJobs, setGold, setPowerups, setUnlockedJobs }) => {
+        if (!isOpen) return null;
+
+        const handlePurchase = (item) => {
+          if (gold >= item.price) {
+            setGold(prev => prev - item.price);
+            if(item.type === 'powerup') {
+              setPowerups(prev => ({
+                ...prev,
+                [item.id]: (prev[item.id] || 0) + 1
+              }));
+            } else if(item.type === 'job') {
+              setUnlockedJobs(prev => [...prev, item.id]);
+            }
+          }
+        };
+
+        const renderPowerupItem = (item) => {
+          const ownedCount = powerups[item.id] || 0;
+          const canAfford = gold >= item.price;
+          return (
+            <div key={item.id} className="flex items-center justify-between p-3 bg-amber-200/50 rounded-lg">
+              <div className="flex items-center">
+                <div className="text-3xl mr-4">{item.icon}</div>
+                <div>
+                  <h4 className="font-bold">{item.name} <span className="text-sm font-normal text-amber-700">(보유: {ownedCount})</span></h4>
+                  <p className="text-xs text-amber-800">{item.description}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => handlePurchase(item)}
+                disabled={!canAfford}
+                className={`px-4 py-2 text-sm font-bold text-white rounded-lg shadow-md transition-transform transform hover:scale-105
+                  ${canAfford ? 'bg-green-500 hover:bg-green-600' : 'bg-red-400 cursor-not-allowed'}`}
+              >
+                {item.price} G
+              </button>
+            </div>
+          );
+        };
+        
+        const renderJobItem = (item) => {
+          const isOwned = unlockedJobs.includes(item.id);
+          const canAfford = gold >= item.price;
+          const isDisabled = isOwned || !canAfford;
+
+          return (
+            <div key={item.id} className="flex items-center justify-between p-3 bg-amber-200/50 rounded-lg">
+              <div className="flex items-center">
+                <div className="text-3xl mr-4">{item.icon}</div>
+                <div>
+                  <h4 className="font-bold">{item.name}</h4>
+                  <p className="text-xs text-amber-800">{item.description}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => handlePurchase(item)}
+                disabled={isDisabled}
+                className={`px-4 py-2 text-sm font-bold text-white rounded-lg shadow-md transition-transform transform hover:scale-105
+                  ${isOwned ? 'bg-gray-400 cursor-not-allowed' : 
+                    canAfford ? 'bg-green-500 hover:bg-green-600' : 'bg-red-400 cursor-not-allowed'}`}
+              >
+                {isOwned ? '보유중' : `${item.price} G`}
+              </button>
+            </div>
+          );
+        };
+        
+        const powerupsToSell = SHOP_ITEMS.powerups.map(i => ({...i, type: 'powerup'}));
+        const jobsToSell = SHOP_ITEMS.jobs.map(i => ({...i, type: 'job'}));
+
+        return (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+            <div className="w-full max-w-lg bg-amber-100 rounded-2xl shadow-xl border-4 border-amber-500 p-6 flex flex-col">
+              <header className="flex justify-between items-center mb-4 pb-2 border-b-2 border-amber-300">
+                <h2 className="text-3xl font-bold">상점</h2>
+                <div className="px-4 py-2 bg-yellow-400/80 rounded-lg font-bold text-amber-900 flex items-center shadow-inner">
+                  <GoldIcon /> {gold} G
+                </div>
+                <button onClick={onClose} className="text-3xl font-bold hover:text-red-500 transition-colors">&times;</button>
+              </header>
+              <div className="space-y-6 overflow-y-auto max-h-[60vh] pr-2">
+                <section>
+                  <h3 className="text-xl font-semibold mb-2 text-amber-800">파워업</h3>
+                  <div className="space-y-2">
+                    {powerupsToSell.map(renderPowerupItem)}
+                  </div>
+                </section>
+                <section>
+                  <h3 className="text-xl font-semibold mb-2 text-amber-800">직업 해금</h3>
+                  <div className="space-y-2">
+                    {jobsToSell.map(renderJobItem)}
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        )
+      };
+
+      // --- Main App Component ---
+      function App() {
+        const [gameState, setGameState] = useState('idle'); // idle, playing, paused, levelComplete, gameOver, gameComplete
+        const [score, setScore] = useState(0);
+        const [level, setLevel] = useState(1);
+        const [difficulty, setDifficulty] = useState('보통');
+        const [gridSize, setGridSize] = useState(9);
+        const [entities, setEntities] = useState(new Array(gridSize).fill({type: 'empty'}));
+        const [job, setJob] = useState('농부');
+        const [isShopOpen, setIsShopOpen] = useState(false);
+        
+        // Persistent player data
+        const [highScore, setHighScore] = useState(() => Number(localStorage.getItem('whac-a-mole-highscore') || 0));
+        const [gold, setGold] = useState(() => Number(localStorage.getItem('whac-a-mole-gold') || 0));
+        const [powerups, setPowerups] = useState(() => JSON.parse(localStorage.getItem('whac-a-mole-powerups') || '{}'));
+        const [unlockedJobs, setUnlockedJobs] = useState(() => JSON.parse(localStorage.getItem('whac-a-mole-unlockedJobs') || '["농부", "광부", "시간 여행자"]'));
+        
+        useEffect(() => { localStorage.setItem('whac-a-mole-gold', gold.toString()); }, [gold]);
+        useEffect(() => { localStorage.setItem('whac-a-mole-powerups', JSON.stringify(powerups)); }, [powerups]);
+        useEffect(() => { localStorage.setItem('whac-a-mole-unlockedJobs', JSON.stringify(unlockedJobs)); }, [unlockedJobs]);
+
+        // Job/Powerup/Pet specific states
+        const [molesWhacked, setMolesWhacked] = useState(0);
+        const [isSkillActive, setIsSkillActive] = useState(false);
+        const [skillCooldown, setSkillCooldown] = useState(0);
+        const [scorePulse, setScorePulse] = useState(false);
+        const [isMoleBaitActive, setIsMoleBaitActive] = useState(false);
+        const [nextMoleHint, setNextMoleHint] = useState(null);
+        const [activeBuffs, setActiveBuffs] = useState({});
+        const [buffTimers, setBuffTimers] = useState({});
+
+        const gridDimension = useMemo(() => Math.sqrt(gridSize), [gridSize]);
+        const timeDilation = isSkillActive ? 1.5 : 1.0;
+
+        const currentLevelConfig = useMemo(() => {
+          const baseConfig = LEVEL_CONFIG[level];
+          const modifier = DIFFICULTY_MODIFIERS[difficulty];
+          return {
+            interval: baseConfig.interval * modifier.interval,
+            duration: Math.round(baseConfig.duration * modifier.duration),
+            scoreToPass: Math.round(baseConfig.scoreToPass * modifier.score),
+          };
+        }, [level, difficulty]);
+        
+        const effectiveInterval = useMemo(() => {
+          let interval = currentLevelConfig.interval * timeDilation;
+          if(activeBuffs.moleBoost) interval *= 0.6; // 40% faster
+          return interval;
+        }, [currentLevelConfig.interval, timeDilation, activeBuffs.moleBoost]);
+        
+        const [timeLeft, setTimeLeft] = useState(currentLevelConfig.duration);
+
+        useEffect(() => { setEntities(new Array(gridSize).fill({type: 'empty'})); }, [gridSize, difficulty, job]);
+
+        // Buff timer manager
+        useEffect(() => {
+          const timer = setInterval(() => {
+            const now = Date.now();
+            let hasChanged = false;
+            const newBuffTimers = {};
+            for (const key in activeBuffs) {
+              const timeLeft = Math.ceil((activeBuffs[key].expiresAt - now) / 1000);
+              if (timeLeft > 0) {
+                newBuffTimers[key] = timeLeft;
+              } else {
+                hasChanged = true;
+              }
+            }
+            setBuffTimers(newBuffTimers);
+            if(hasChanged) {
+              setActiveBuffs(prev => {
+                const newActive = {};
+                for(const key in prev) {
+                  if (prev[key].expiresAt > now) newActive[key] = prev[key];
+                }
+                return newActive;
+              });
+            }
+          }, 250);
+          return () => clearInterval(timer);
+        }, [activeBuffs]);
+
+        // Game timer & end-of-run logic
+        useEffect(() => {
+          if (gameState !== 'playing') return;
+
+          if (timeLeft <= 0) {
+            setEntities(new Array(gridSize).fill({type: 'empty'}));
+            const passed = score >= currentLevelConfig.scoreToPass;
+
+            if (passed && level < MAX_LEVEL) {
+              setGameState('levelComplete');
+            } else { // End of the run
+              let earnedGold = score;
+              if(job === '수집가' && unlockedJobs.includes('수집가')) {
+                earnedGold = Math.ceil(earnedGold * 1.2);
+              }
+              setGold(prev => prev + earnedGold);
+              if (score > highScore) {
+                  setHighScore(score);
+                  localStorage.setItem('whac-a-mole-highscore', score.toString());
+              }
+              if (passed && level === MAX_LEVEL) {
+                  setGameState('gameComplete');
+              } else {
+                  setGameState('gameOver');
+              }
+            }
+            return;
+          }
+
+          const timerId = setTimeout(() => {
+              setTimeLeft(timeLeft - 1);
+              if (skillCooldown > 0) {
+                  setSkillCooldown(prev => prev - 1);
+              }
+          }, 1000 * timeDilation);
+
+          return () => clearTimeout(timerId);
+        }, [gameState, timeLeft, score, highScore, currentLevelConfig, gridSize, skillCooldown, timeDilation, level, job, unlockedJobs]);
+
+        // Entity generation effect
+        useEffect(() => {
+          if (gameState !== 'playing') return;
+          const moleIntervalId = setInterval(() => {
+            setEntities(() => {
+                const newEntities = new Array(gridSize).fill({ type: 'empty' });
+                const numToShow = Math.min(Math.floor(level / 2) + Math.floor(gridSize / 9), Math.floor(gridSize / 2));
+                let availableSpots = Array.from(Array(gridSize).keys());
+                
+                for(let i=0; i < numToShow; i++) {
+                    if (availableSpots.length === 0) break;
+                    const spotIndexInAvailable = Math.floor(Math.random() * availableSpots.length);
+                    const spotIndex = availableSpots.splice(spotIndexInAvailable, 1)[0];
+                    
+                    if(isMoleBaitActive) {
+                      newEntities[spotIndex] = { type: 'mole' };
+                    } else {
+                      const rand = Math.random();
+                      if (rand < PET_PROBABILITY) {
+                        const petTypes = Object.keys(PET_CONFIG);
+                        const chosenPet = petTypes[Math.floor(Math.random() * petTypes.length)];
+                        newEntities[spotIndex] = { type: 'pet', subType: chosenPet };
+                      }
+                      else if (rand < PET_PROBABILITY + BOMB_PROBABILITY) newEntities[spotIndex] = { type: 'bomb' };
+                      else if (rand < PET_PROBABILITY + BOMB_PROBABILITY + ITEM_PROBABILITY) newEntities[spotIndex] = { type: 'clock' };
+                      else newEntities[spotIndex] = { type: 'mole' };
+                    }
+                }
+                
+                if (!isMoleBaitActive && job === '점성술사' && unlockedJobs.includes('점성술사') && Math.random() < 0.25) { // 25% chance
+                    const moleIndices = newEntities.map((e, i) => e.type === 'mole' ? i : -1).filter(i => i !== -1);
+                    if (moleIndices.length > 0) {
+                        const hintedIndex = moleIndices[Math.floor(Math.random() * moleIndices.length)];
+                        setNextMoleHint(hintedIndex);
+                        setTimeout(() => setNextMoleHint(null), effectiveInterval * 0.8);
+                    }
+                } else {
+                    setNextMoleHint(null);
+                }
+                
+                return newEntities;
+            });
+          }, effectiveInterval);
+          return () => clearInterval(moleIntervalId);
+        }, [gameState, gridSize, level, job, unlockedJobs, isMoleBaitActive, effectiveInterval]);
+        
+        const addBuff = (buffType, durationSeconds, data = {}) => {
+            setActiveBuffs(prev => ({
+                ...prev,
+                [buffType]: { expiresAt: Date.now() + durationSeconds * 1000, ...data }
+            }));
+        };
+
+        const setupLevel = useCallback((targetLevel, initialScore = 0) => {
+          setLevel(targetLevel);
+          setScore(initialScore);
+          setMolesWhacked(0);
+          setSkillCooldown(0);
+          setIsSkillActive(false);
+          setIsMoleBaitActive(false);
+          setNextMoleHint(null);
+          setActiveBuffs({});
+          setBuffTimers({});
+          const newConfig = LEVEL_CONFIG[targetLevel];
+          const modifier = DIFFICULTY_MODIFIERS[difficulty];
+          let duration = Math.round(newConfig.duration * modifier.duration);
+          if (job === '엔지니어' && unlockedJobs.includes('엔지니어')) {
+            duration += 5;
+          }
+          setTimeLeft(duration);
+          setGameState('playing');
+        }, [difficulty, job, unlockedJobs]);
+
+        const startGame = useCallback(() => setupLevel(1), [setupLevel]);
+        const startNextLevel = useCallback(() => { level < MAX_LEVEL ? setupLevel(level + 1, score) : setGameState('gameComplete'); }, [level, setupLevel, score]);
+        const restartGame = useCallback(() => {
+            setGameState('idle');
+            const newConfig = LEVEL_CONFIG[1];
+            const modifier = DIFFICULTY_MODIFIERS[difficulty];
+            setTimeLeft(Math.round(newConfig.duration * modifier.duration));
+            setScore(0);
+            setLevel(1);
+        }, [difficulty]);
+
+        const togglePause = useCallback(() => setGameState(prev => (prev === 'playing' ? 'paused' : 'playing')), []);
+        const triggerScorePulse = () => { setScorePulse(true); setTimeout(() => setScorePulse(false), 200); };
+
+        const whackHole = useCallback((index) => {
+          const entity = entities[index];
+          if (entity.type !== 'empty') {
+            let scoreChange = 0;
+            switch (entity.type) {
+              case 'mole':
+                let baseScore = 1;
+                if (job === '도박사' && unlockedJobs.includes('도박사')) {
+                    const rand = Math.random();
+                    if (rand < 0.05) baseScore = 0; // 5% for 0
+                    else if (rand < 0.15) baseScore = 2; // 10% for 2x
+                }
+                scoreChange = activeBuffs.scoreDoubled ? baseScore * 2 : baseScore;
+                const newWhackedCount = molesWhacked + 1;
+                setMolesWhacked(newWhackedCount);
+                if (job === '농부' && unlockedJobs.includes('농부') && newWhackedCount % 10 === 0) scoreChange += 2;
+                break;
+              case 'clock':
+                const timeBonus = (job === '엔지니어' && unlockedJobs.includes('엔지니어')) ? 3 : 2;
+                setTimeLeft(prevTime => prevTime + timeBonus);
+                break;
+              case 'bomb':
+                if((powerups.bomb_defusal_kit || 0) > 0) {
+                   setPowerups(p => ({ ...p, bomb_defusal_kit: p.bomb_defusal_kit - 1 }));
+                } else {
+                   let penalty = (job === '광부' && unlockedJobs.includes('광부')) ? 2 : 3;
+                   scoreChange = -penalty;
+                }
+                break;
+              case 'pet':
+                switch(entity.subType) {
+                    case 'golden_mole':
+                        setGold(g => g + 10);
+                        addBuff('scoreDoubled', 5);
+                        break;
+                    case 'fairy_mole':
+                        setTimeLeft(t => t + 5);
+                        addBuff('moleBoost', 10);
+                        break;
+                }
+                break;
+            }
+            if (scoreChange !== 0) { setScore(prevScore => Math.max(0, prevScore + scoreChange)); triggerScorePulse(); }
+            setEntities(prevEntities => { const newEntities = [...prevEntities]; newEntities[index] = { type: 'empty' }; return newEntities; });
+          }
+        }, [entities, job, molesWhacked, unlockedJobs, powerups, activeBuffs]);
+
+        const handleSkillUse = () => { if (job === '시간 여행자' && skillCooldown === 0 && gameState === 'playing') { setIsSkillActive(true); setSkillCooldown(20); setTimeout(() => setIsSkillActive(false), 5000); }};
+        const handleGridSizeChange = (newSize) => { if (gameState === 'idle') setGridSize(newSize); };
+        const handleDifficultyChange = (newDifficulty) => { if (gameState === 'idle') setDifficulty(newDifficulty); };
+        const handleJobChange = (newJob) => { if (gameState === 'idle') setJob(newJob); };
+        
+        const useMoleBait = () => {
+            if ((powerups.mole_bait || 0) > 0 && !isMoleBaitActive && gameState === 'playing') {
+                setPowerups(prev => ({ ...prev, mole_bait: prev.mole_bait - 1 }));
+                setIsMoleBaitActive(true);
+                setTimeout(() => setIsMoleBaitActive(false), 5000);
+            }
+        };
+
+        const renderModalContent = () => {
+          let goldEarned = score;
+          if(job === '수집가' && unlockedJobs.includes('수집가')) {
+              goldEarned = Math.ceil(goldEarned * 1.2);
+          }
+          switch (gameState) {
+            case 'paused': return (<div className="text-center bg-black/70 p-8 rounded-2xl shadow-xl border-4 border-gray-500 flex flex-col items-center gap-4"><h2 className="text-5xl font-bold text-white drop-shadow-lg mb-4">일시정지</h2><button onClick={togglePause} className="w-48 px-6 py-3 bg-green-500 text-white font-bold text-xl rounded-lg shadow-md hover:bg-green-600 transition-transform transform hover:scale-105">계속하기</button><button onClick={restartGame} className="w-48 px-6 py-3 bg-red-500 text-white font-bold text-xl rounded-lg shadow-md hover:bg-red-600 transition-transform transform hover:scale-105">게임 나가기</button></div>);
+            case 'levelComplete': return (<div className="text-center bg-blue-100 p-8 rounded-2xl shadow-xl border-4 border-blue-400"><h2 className="text-4xl font-bold text-blue-700">레벨 {level} 클리어!</h2><p className="text-xl mt-2 text-blue-600">점수: {score}점</p><p className="text-lg mt-1">다음 레벨로 진행하세요!</p></div>);
+            case 'gameOver': return (<div className="text-center bg-red-100 p-8 rounded-2xl shadow-xl border-4 border-red-400"><h2 className="text-4xl font-bold text-red-700">게임 종료!</h2><p className="text-xl mt-2 text-red-600">최종 점수: {score}점</p><p className="text-lg mt-2 font-bold text-yellow-600">획득 골드: {goldEarned} G</p>{score < currentLevelConfig.scoreToPass && (<p className="text-lg mt-1 text-red-500">목표 점수({currentLevelConfig.scoreToPass}점)를 달성하지 못했습니다.</p>)}</div>);
+            case 'gameComplete': return (<div className="text-center bg-green-100 p-8 rounded-2xl shadow-xl border-4 border-green-400"><h2 className="text-4xl font-bold text-green-700">모든 레벨 클리어!</h2><p className="text-xl mt-2 text-green-600">최종 점수: {score}점</p><p className="text-lg mt-2 font-bold text-yellow-600">획득 골드: {goldEarned} G</p><p className="mt-4">축하합니다! 당신은 두더지 잡기의 명수입니다!</p></div>)
+            default: return null;
+          }
+        };
+
+        const renderMainButton = () => {
+            let text = '', action = () => {};
+            switch(gameState) {
+                case 'idle': return null; // Idle screen has its own buttons
+                case 'playing': text = '일시정지'; action = togglePause; break;
+                case 'paused': return null;
+                case 'levelComplete': text = '다음 단계'; action = startNextLevel; break;
+                case 'gameOver': text = '다시 시작'; action = restartGame; break;
+                case 'gameComplete': text = '다시하기'; action = restartGame; break;
+            }
+            if (!text) return null;
+            return ( <button onClick={action} className="px-10 py-4 bg-orange-500 text-white font-bold text-2xl rounded-xl shadow-lg hover:bg-orange-600 transition-all duration-200 transform hover:scale-105">{text}</button> );
+        }
+
+        const renderActiveBuffs = () => {
+          const buffs = [];
+          if(buffTimers.scoreDoubled) buffs.push(`🌟 점수 2배! (${buffTimers.scoreDoubled}초)`);
+          if(buffTimers.moleBoost) buffs.push(`🧚 속도 UP! (${buffTimers.moleBoost}초)`);
+          
+          if (buffs.length === 0) return <div className="h-8"></div>;
+
+          return (
+            <div className="h-8 flex justify-center items-center gap-4 text-center font-bold text-purple-700 bg-purple-200/50 rounded-lg p-2 mb-2 shadow-inner">
+              {buffs.join(' | ')}
+            </div>
+          );
+        };
+
+        return (
+          <main className="min-h-screen bg-green-200 flex flex-col items-center justify-center p-4 text-amber-900 select-none">
+            <ShopModal isOpen={isShopOpen} onClose={() => setIsShopOpen(false)} gold={gold} powerups={powerups} unlockedJobs={unlockedJobs} setGold={setGold} setPowerups={setPowerups} setUnlockedJobs={setUnlockedJobs} />
+            <div className="w-full max-w-2xl mx-auto bg-amber-200/70 p-4 sm:p-8 rounded-3xl shadow-2xl border-8 border-amber-800/50">
+              
+              <header className="relative text-center mb-4">
+                <h1 className="text-4xl sm:text-6xl font-extrabold tracking-wider">두더지 잡기</h1>
+                <p className="text-lg text-amber-800 mt-1">상점에서 아이템을 구매하고 최고 점수에 도전하세요!</p>
+                <div className="absolute top-0 right-0 text-xs text-amber-700/80">제작자: 한국인이라면</div>
+              </header>
+
+              <div className="grid grid-cols-2 gap-4 bg-amber-100 rounded-lg p-3 sm:p-4 mb-2 text-xl sm:text-2xl font-bold shadow-md">
+                  <div className={`flex items-center col-span-1 transition-transform duration-200 ${scorePulse ? 'scale-125 text-yellow-500' : ''}`}><HammerIcon /><span>점수: {score}</span></div>
+                  <div className="flex items-center col-span-1 justify-end"><TimerIcon /><span>시간: {timeLeft}</span></div>
+                  <div className="col-span-2 text-center text-base sm:text-lg text-amber-700">
+                    <span>레벨: {level} ({difficulty})</span><span className="mx-2 sm:mx-4">|</span>
+                    <span>직업: {job}</span><span className="mx-2 sm:mx-4">|</span>
+                    <span>목표: {currentLevelConfig.scoreToPass}점</span>
+                  </div>
+              </div>
+              
+              {gameState === 'playing' ? renderActiveBuffs() : <div className="h-8 mb-2"></div>}
+              
+              <div className="text-center text-base sm:text-lg text-amber-700 bg-amber-100 rounded-lg p-2 mb-4 shadow-md flex justify-center items-center gap-6">
+                <span>최고 점수: {highScore}</span>
+                <span className="font-bold flex items-center"><GoldIcon /> {gold} G</span>
+              </div>
+
+              {gameState === 'idle' && (
+                <div className="text-center my-4 p-3 bg-amber-100/50 rounded-lg space-y-4">
+                  <div>
+                    <h3 className="font-bold text-lg mb-2">직업 선택</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+                      {unlockedJobs.map(j => (
+                        <button key={j} onClick={() => handleJobChange(j)} className={`p-2 sm:p-4 text-sm sm:text-base border-4 rounded-lg transition-all duration-200 ${job === j ? 'bg-orange-500 text-white border-orange-700 scale-105 shadow-lg' : 'bg-white text-amber-900 border-gray-200 hover:bg-gray-100'}`}>
+                          <div className="text-2xl sm:text-4xl">{JOB_CONFIG[j]?.icon || '?'}</div>
+                          <div className="font-bold mt-1">{JOB_CONFIG[j]?.name || j}</div>
+                          <div className="text-xs mt-1 hidden sm:block h-12">{JOB_CONFIG[j]?.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-4 pt-4">
+                    <div>
+                        <h3 className="font-bold text-lg mb-2">난이도 선택</h3>
+                        <div className="inline-flex rounded-md shadow-sm" role="group">
+                            {Object.keys(DIFFICULTY_MODIFIERS).map(d => ( <button key={d} onClick={() => handleDifficultyChange(d)} type="button" className={`px-4 py-2 text-sm font-medium border first:rounded-l-lg last:rounded-r-lg ${difficulty === d ? 'bg-orange-500 text-white border-orange-600' : 'bg-white text-amber-900 border-gray-200 hover:bg-gray-100'}`}>{d}</button>))}
+                        </div>
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-lg mb-2">게임판 크기 선택</h3>
+                        <select value={gridSize} onChange={(e) => handleGridSizeChange(Number(e.target.value))} className="px-4 py-2 text-sm font-medium rounded-lg border bg-white text-amber-900 border-gray-200 hover:bg-gray-100 focus:ring-2 focus:ring-orange-500">
+                          {Array.from({ length: 9 }, (_, i) => i + 3).map(size => ( <option key={size} value={size * size}>{size} x {size}</option>))}
+                        </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <div className="relative">
+                <div style={{ gridTemplateColumns: `repeat(${gridDimension}, 1fr)` }} className={`grid gap-1 sm:gap-2 w-full aspect-square bg-lime-700 p-2 sm:p-4 rounded-2xl shadow-inner ${gameState === 'playing' ? "cursor-[url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"40\" height=\"48\" viewport=\"0 0 100 100\" style=\"fill:black;font-size:24px;\"><text y=\"50%\">🔨</text></svg>'),_auto]" : "cursor-default"}`}>
+                  {entities.map((entity, index) => ( <Hole key={index} entity={entity} onWhack={() => whackHole(index)} canWhack={gameState === 'playing'} isHinted={index === nextMoleHint} /> ))}
+                </div>
+                { (gameState !== 'playing' && gameState !== 'idle') && ( <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-2xl p-4">{renderModalContent()}</div> )}
+              </div>
+              
+              <div className="mt-8 text-center flex justify-around items-center flex-wrap gap-4">
+                 {gameState === 'idle' ? (
+                  <div className="flex gap-4 w-full">
+                    <button onClick={startGame} className="flex-grow px-10 py-4 bg-orange-500 text-white font-bold text-2xl rounded-xl shadow-lg hover:bg-orange-600 transition-all duration-200 transform hover:scale-105">게임 시작</button>
+                    <button onClick={() => setIsShopOpen(true)} className="px-8 py-4 bg-sky-500 text-white font-bold text-2xl rounded-xl shadow-lg hover:bg-sky-600 transition-all duration-200 transform hover:scale-105">상점</button>
+                  </div>
+                ) : renderMainButton()}
+                
+                <div className="flex gap-4">
+                  {job === '시간 여행자' && gameState === 'playing' && (
+                    <button onClick={handleSkillUse} disabled={skillCooldown > 0} className={`px-6 py-3 text-white font-bold text-lg rounded-xl shadow-lg transition-all duration-200 transform ${skillCooldown > 0 ? 'bg-gray-500 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 hover:scale-105'} ${isSkillActive ? 'animate-pulse ring-4 ring-purple-300' : ''}`}>
+                        {skillCooldown > 0 ? `쿨타임: ${skillCooldown}초` : '시간 왜곡'}
+                    </button>
+                  )}
+                  {gameState === 'playing' && (powerups.mole_bait || 0) > 0 && (
+                    <button onClick={useMoleBait} disabled={isMoleBaitActive} className={`px-6 py-3 text-white font-bold text-lg rounded-xl shadow-lg transition-all duration-200 transform ${isMoleBaitActive ? 'bg-yellow-700 cursor-not-allowed' : 'bg-yellow-500 hover:bg-yellow-600 hover:scale-105'}`}>
+                        🍖 미끼 ({powerups.mole_bait})
+                        {isMoleBaitActive && <span className="ml-2">(활성)</span>}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </main>
+        );
+      }
+
+      const rootElement = document.getElementById('root');
+      if (!rootElement) { throw new Error("Could not find root element to mount to"); }
+      const root = ReactDOM.createRoot(rootElement);
+      root.render(<StrictMode><App /></StrictMode>);
